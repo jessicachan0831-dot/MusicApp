@@ -1,3 +1,7 @@
+Artlist. (n.d.). Royalty-free music collection. Retrieved from https://artlist.io/royalty-free-music/search?includedIds=64
+
+Pinterest. (n.d.). User-uploaded image. Retrieved from https://www.pinterest.com/
+
 # Welcome to your Expo app 👋
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
