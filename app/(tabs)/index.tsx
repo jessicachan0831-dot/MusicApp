@@ -1,98 +1,293 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
+import { Audio } from 'expo-av';
+import { Accelerometer } from 'expo-sensors';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, DevSettings, Easing, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+const songs = [
+  {
+    title: 'Yarin Primak - Highway',
+    source: require('../../assets/music/YarinPrimak-Highway.mp3'),
+    image: require('../../assets/images/cd1.jpg'),
+  },
+  {
+    title: 'KOLA - Space',
+    source: require('../../assets/music/KOLA-Space.mp3'),
+    image: require('../../assets/images/cd2.jpg'),
+  },
+  {
+    title: 'djosama',
+    source: require('../../assets/music/djosama.mp3'),
+    image: require('../../assets/images/cd3.jpg'),
+  },
+];
 
-export default function HomeScreen() {
+export default function MusicPlayer() {
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTrack, setCurrentTrack] = useState(0);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0); 
+
+  // animation control
+  const spinAnim = useRef(new Animated.Value(0)).current;
+
+  const spin = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  // spinnnn
+  const spinLoop = () => {
+    spinAnim.setValue(0);
+    Animated.timing(spinAnim, {
+      toValue: 1,
+      duration: 9500,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished && isPlaying) {
+        spinLoop();
+      }
+    });
+  };
+  
+  //shake to change songs
+  useEffect(() => {
+    if ((DevSettings as any).setShakeToShowDevMenu) {
+    (DevSettings as any).setShakeToShowDevMenu(false);
+  }
+  let subscription: any;
+  let lastShakeTime = 0;
+
+  const handleAccelerometerData = (data: any) => {
+    const acceleration = Math.sqrt(
+      data.x * data.x + data.y * data.y + data.z * data.z
+    );
+
+    // change threshold here
+    if (acceleration > 1.4) {
+      const now = Date.now();
+      if (now - lastShakeTime > 1000) {
+        lastShakeTime = now;
+        handleNext(); 
+      }
+    }
+  };
+
+  Accelerometer.setUpdateInterval(200); 
+  subscription = Accelerometer.addListener(handleAccelerometerData);
+
+  return () => {
+    subscription && subscription.remove();
+  };
+}, []);
+
+
+  useEffect(() => {
+    if (isPlaying) {
+      spinLoop();
+    } else {
+      spinAnim.stopAnimation();
+    }
+  }, [isPlaying]);
+
+  // change to play current track
+  useEffect(() => {
+    loadAndPlayTrack();
+    return () => {
+      if (sound) {
+        sound.unloadAsync();
+      }
+    };
+  }, [currentTrack]);
+
+  // play songs
+  async function loadAndPlayTrack() {
+    try {
+      if (sound) {
+        await sound.stopAsync();
+        await sound.unloadAsync();
+      }
+
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        songs[currentTrack].source,
+        { shouldPlay: true, positionMillis: 0 }
+      );
+
+      setSound(newSound);
+      setIsPlaying(true);
+
+      newSound.setOnPlaybackStatusUpdate((status: any) => {
+        if (status.isLoaded) {
+          setPosition(status.positionMillis);
+          setDuration(status.durationMillis || 0);
+          if (status.didJustFinish) {
+            handleNext();
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Play error:', error);
+    }
+  }
+
+  // puase/continue
+  async function togglePlayPause() {
+    if (!sound) return;
+    const status = await sound.getStatusAsync();
+
+    if (status.isLoaded && status.isPlaying) {
+      await sound.pauseAsync();
+      setIsPlaying(false);
+    } else {
+      await sound.playAsync();
+      setIsPlaying(true);
+    }
+  }
+//drag to new position
+  async function handleSeek(value: number){
+    if(!sound || !duration)return;
+    const newPosition = value * duration;
+    await sound.setPositionAsync(newPosition);
+    setPosition(newPosition);
+  }
+
+  // next
+  async function handleNext() {
+    setIsPlaying(false);
+    setPosition(0);
+    setCurrentTrack((prev) => (prev + 1) % songs.length);
+  }
+
+  // last
+  async function handlePrev() {
+    setIsPlaying(false);
+    setPosition(0);
+    setCurrentTrack((prev) => (prev - 1 + songs.length) % songs.length);
+  }
+
+  const formatTime = (seconds: number) => {
+    if (isNaN(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
+  const progress = duration > 0 ? position / duration : 0;
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <View style={styles.container}>
+      <Animated.Image
+        source={songs[currentTrack].image}
+        style={[styles.cdImage, { transform: [{ rotate: spin }] }]}
+      />
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      <Text style={styles.title}>{songs[currentTrack].title}</Text>
+
+      {/* slidebar */}
+      <View style={styles.progressContainer}>
+        <Slider
+          style={styles.progressSlider}
+          minimumValue={0}
+          maximumValue={1}
+          minimumTrackTintColor="#aeaaffff"
+          maximumTrackTintColor="#ccc"
+          thumbTintColor="#aeaaffff"
+          value={progress}
+          onValueChange={(val) => setPosition(val*duration)}
+          onSlidingComplete={(val)=> handleSeek(val)}
+        />
+        <View style={styles.timeRow}>
+          <Text style={styles.timeText}>{formatTime(position / 1000)}</Text>
+          <Text style={styles.timeText}>{formatTime(duration / 1000)}</Text>
+        </View>
+      </View>
+
+      {/* buttonss*/}
+      <View style={styles.panel}>
+        <View style={styles.controls}>
+          <TouchableOpacity onPress={handlePrev}>
+            <Ionicons name="play-skip-back" size={40} color="#6c63ff" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.playButton} onPress={togglePlayPause}>
+            <Ionicons name={isPlaying ? 'pause' : 'play'} size={40} color="white" />
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={handleNext}>
+            <Ionicons name="play-skip-forward" size={40} color="#6c63ff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  container: {
+    flex: 1,
+    backgroundColor: '#f6f7fb',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cdImage: {
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    marginBottom: 40,
+  },
+  title: {
+    color: '#111',
+    fontSize: 20,
+    fontWeight: '500',
+    marginBottom: 20,
+  },
+  progressContainer: {
+    width: '85%',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  progressSlider: {
+    width: '100%',
+    height: 30,
+  },
+  timeRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: -5,
+  },
+  timeText: {
+    color: '#333',
+    fontSize: 12,
+  },
+  panel: {
+    width: '85%',
+    backgroundColor: 'rgba(216, 214, 255, 0.25)',
+    borderRadius: 30,
+    paddingVertical: 45,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 8,
+  },
+  controls: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
+    width: '100%',
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  playButton: {
+    backgroundColor: '#6c63ff',
+    borderRadius: 50,
+    padding: 15,
   },
 });
